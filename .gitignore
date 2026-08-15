@@ -1,0 +1,15 @@
+# Secrets - never commit real credentials
+.env
+
+# Python virtual environment - huge, machine-specific, rebuildable from requirements.txt
+venv/
+
+# Python bytecode cache - regenerated automatically, no reason to track it
+__pycache__/
+*.pyc
+
+# macOS Finder metadata
+.DS_Store
+
+# pytest cache
+.pytest_cache/
