@@ -55,6 +55,18 @@ class Config:
     FLASK_ENV = os.environ.get("FLASK_ENV", "development")
     DEBUG = FLASK_ENV == "development"
 
+    # Render (and most hosts) assign a port dynamically and tell the
+    # app which one via the PORT environment variable - it is not
+    # something we get to pick. Defaulting to 5000 keeps `python app.py`
+    # working unchanged for local development, where nothing sets PORT.
+    # Note this only matters for app.py's own `app.run()` fallback -
+    # the real production process is gunicorn, which reads $PORT
+    # directly from the shell in its own start command (see the
+    # render.yaml note on that), not through this class. It's defined
+    # here anyway so there is still exactly one place that knows how
+    # the port is chosen, matching every other setting in this file.
+    PORT = int(os.environ.get("PORT", 5000))
+
     # Path to the racket catalogue CSV, built from this file's own
     # location rather than a relative path like "data/rackets.csv".
     # A relative path breaks depending on which directory you happen to

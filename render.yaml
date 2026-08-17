@@ -1,0 +1,46 @@
+# render.yaml - Render's "Blueprint" format: the entire deploy
+# configuration as one file checked into the repo, instead of clicking
+# through Render's dashboard to set it up by hand. Chosen over a
+# Procfile (Render supports both) specifically because this is a
+# portfolio piece: anyone reading the repo can see exactly how it's
+# deployed without you having to explain the dashboard settings out
+# loud, and it enables Render's one-click "New Blueprint" deploy
+# straight from the GitHub repo.
+#
+# What this file does NOT do: store the actual secret values. Real
+# values for anything marked `sync: false` below are typed into
+# Render's dashboard once, after the service exists - see the
+# walkthrough in the chat for exactly where.
+
+services:
+  - type: web
+    name: padelpal
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # --workers 1 --threads 4 --worker-class gthread: one process
+    # handling several requests concurrently via threads, rather than
+    # several processes each holding their own full copy of the
+    # catalogue in memory. See PRODUCT.md/the chat for the measured
+    # numbers behind this choice - it uses less RAM than 2+ sync
+    # workers AND avoids loading the catalogue more than once, on a
+    # free-tier instance that only gets 0.1 CPU to begin with.
+    # --bind 0.0.0.0:$PORT: Render assigns the port dynamically via the
+    # PORT environment variable - 0.0.0.0 means "listen on every
+    # network interface", not just localhost, which is required for
+    # traffic from outside the container to reach this process at all.
+    startCommand: "gunicorn app:app --workers 1 --threads 4 --worker-class gthread --bind 0.0.0.0:$PORT"
+    envVars:
+      # sync: false means "this variable exists, but Render should
+      # never read its value from this file" - you type the real value
+      # into the dashboard instead, once, after the service is
+      # created. That is what keeps the actual API key and secret key
+      # out of git entirely, the same reason .env is gitignored.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FLASK_SECRET_KEY
+        sync: false
+      # Not a secret - safe to commit directly. This is what flips
+      # Config.DEBUG to False in production (see config.py).
+      - key: FLASK_ENV
+        value: production

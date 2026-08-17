@@ -18,6 +18,29 @@ from flask import Flask, jsonify, render_template, request
 from config import Config
 from services import ai, catalogue, recommender
 
+# Configures Python's ROOT logger - every logger.getLogger(...) call
+# anywhere in this codebase (this file, and any service that adds
+# logging later) inherits this setup unless it's overridden locally.
+# level=logging.INFO means INFO and above (INFO, WARNING, ERROR,
+# CRITICAL) actually produce output; DEBUG stays silent unless this is
+# changed later.
+#
+# Why this was missing until now: Python's logging module has a
+# fallback "handler of last resort" that prints WARNING-and-above to
+# stderr with zero setup, which is exactly why logger.error(...) below
+# already appeared to work without this line - by accident, not by
+# design. The moment anything in this codebase called logger.info(...)
+# or logger.debug(...), it would have vanished silently, in both local
+# and production, since neither is at or above WARNING.
+#
+# Called exactly once, here, and NOT inside `if __name__ == "__main__":`
+# below - gunicorn in production never executes that block (it imports
+# `app:app` as a module, it never runs this file as a script), so
+# putting it there would mean logging works locally but silently never
+# gets configured in production. Module level guarantees this runs
+# during import, in every process, under both `python app.py` and
+# gunicorn alike.
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = Config.FLASK_SECRET_KEY
@@ -226,8 +249,7 @@ def recommend():
 
 
 if __name__ == "__main__":
-    # Port is hardcoded to Flask's default (5000) for now - Sprint 6
-    # (deployment) is explicitly where config.py grows a PORT setting
-    # read from the environment, since Render (and most hosts) assign
-    # the port dynamically. Not needed for local development yet.
-    app.run(debug=Config.DEBUG)
+    # This block only runs for `python app.py` - Render's actual
+    # production process is gunicorn (see render.yaml), which never
+    # imports this file as __main__ and never reaches this line.
+    app.run(port=Config.PORT, debug=Config.DEBUG)
