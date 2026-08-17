@@ -88,6 +88,28 @@
         <label for="arm-issues">I have arm, wrist or shoulder pain when I play</label>
       </div>
 
+      <!-- Entirely optional and entirely built in script.js - no slots
+           exist in the markup until "+ Add a racket" is clicked, so
+           this section takes up no visual space for anyone who skips
+           it, matching the "must be skippable" requirement literally,
+           not just functionally. -->
+      <section class="previous-rackets">
+        <p class="previous-rackets__label">
+          Rackets you've used before
+          <span class="previous-rackets__optional">(optional, up to {{ max_previous_rackets }})</span>
+        </p>
+        <p class="previous-rackets__hint">
+          This is the most useful thing you can tell us - "that one felt
+          heavy" says more than a level ever could.
+        </p>
+
+        <div id="previous-racket-slots"></div>
+
+        <button type="button" id="add-previous-racket" class="add-previous-racket-button">
+          + Add a racket you've used before
+        </button>
+      </section>
+
       <button type="submit" id="submit-button" class="submit-button">Find my racket</button>
     </form>
 
@@ -106,6 +128,17 @@
       than confirmed. Always check the store's own page before buying.
     </p>
   </footer>
+
+  <!-- Config data for script.js, not markup - kept as plain global
+       variables rather than data-* attributes because one of these
+       (the search index) is ~30KB of structured data, awkward to
+       stuff into an HTML attribute. |tojson is Jinja's own JSON
+       encoder, so this is server-rendered once, not fetched. -->
+  <script>
+    window.RACKET_SEARCH_INDEX = {{ racket_search_index | tojson }};
+    window.RATING_OPTIONS = {{ ratings | tojson }};
+    window.MAX_PREVIOUS_RACKETS = {{ max_previous_rackets }};
+  </script>
 
   <!-- defer: downloads the script while the rest of the page keeps
        parsing, then runs it once the DOM is ready - script.js can

@@ -167,6 +167,238 @@ body {
   color: var(--accent);
 }
 
+/* ---------------------------------------------------------------- */
+/* Previous rackets - optional section, built dynamically by         */
+/* script.js. A dashed border (not a solid one, like the results     */
+/* cards) marks it visually as "part of the form, not a result" -    */
+/* the same distinction .status--loading already uses.               */
+/* ---------------------------------------------------------------- */
+
+.previous-rackets {
+  padding: 1rem 1.1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.previous-rackets__label {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.previous-rackets__optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.previous-rackets__hint {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.previous-racket-slot {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.previous-racket-slot__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.previous-racket-slot__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.previous-racket-slot__remove {
+  border: none;
+  background: none;
+  color: var(--error);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.previous-racket-slot__remove:hover {
+  text-decoration: underline;
+}
+
+/* The search widget: a plain text input, with a floating results list
+   positioned absolutely underneath it. position: relative on the
+   wrapper is what makes that positioning relative to THIS box rather
+   than the whole page. */
+.racket-search {
+  position: relative;
+}
+
+.racket-search__input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font: inherit;
+}
+
+.racket-search__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.racket-search__results {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  position: absolute;
+  z-index: 1;
+  width: 100%;
+  max-height: 12rem;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.racket-search__results:empty {
+  display: none;
+  border: none;
+}
+
+.racket-search__result {
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.racket-search__result:last-child {
+  border-bottom: none;
+}
+
+.racket-search__result:hover,
+.racket-search__result:focus {
+  background: var(--bg);
+}
+
+.racket-search__result-price {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.racket-search__selected {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.racket-search__clear {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Ratings as a row of toggle-style buttons rather than native radio
+   buttons - three short words read better as buttons than as a
+   vertical radio list, and it's a nicer touch on a phone than tiny
+   radio circles. Still backed by real <input type="radio"> elements
+   underneath (visually hidden, not display:none - see the label
+   rule below) so this stays keyboard- and screen-reader-accessible. */
+.rating-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rating-group input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.rating-group label {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 400;
+  cursor: pointer;
+  background: var(--bg);
+}
+
+.rating-group input[type="radio"]:checked + label {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.rating-group input[type="radio"]:focus-visible + label {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.previous-racket-slot__notes {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font: inherit;
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.previous-racket-slot__notes-count {
+  margin: -0.5rem 0 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.add-previous-racket-button {
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.add-previous-racket-button:hover {
+  background: var(--bg);
+}
+
+.add-previous-racket-button:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: default;
+}
+
 .submit-button {
   margin-top: 0.5rem;
   padding: 0.85rem 1.25rem;

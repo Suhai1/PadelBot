@@ -19,6 +19,7 @@ typed (not raw CSV strings):
     profile:      str   "control" | "power" | "hybrid" | "" (unknown)
     core:         str   e.g. "soft EVA", "hard EVA", "foam", "" (unknown)
     surface:      str   e.g. "12K carbon", "18K carbon", "" (unknown)
+    balance:      str   "low" | "medium" | "high" | "" (unknown)
     availability: str   "high" | "medium" | "low"
     stock_status: str   "in stock" | "order in" | "" (unknown)
     level:        str   "beginner" | "improver" | "intermediate" | "advanced"
@@ -79,6 +80,21 @@ HARD_CORES = {"hard EVA"}
 HIGH_GRADE_CARBON_SURFACES = {"18K carbon", "15K carbon"}
 POWER_SHAPE = "diamond"
 
+# Simple, case-insensitive keyword match against the free-text notes on
+# a DISLIKED previous racket - if any of these appear, arm_issues is
+# treated as True regardless of the checkbox. Self-reported checkboxes
+# are unreliable in a way "this one hurt my elbow" is not: a player
+# might not think to tick a box, but will say so when explaining why
+# they hated a specific racket.
+#
+# This will have false positives ("my arm got a great workout") - that
+# is an accepted, deliberate tradeoff, not an oversight. A false
+# positive just makes the recommendation more conservative; a false
+# negative could mean missing real pain language. PRODUCT.md's rule
+# that arm pain overrides everything only holds if this errs toward
+# over-triggering, not under-triggering.
+PAIN_KEYWORDS = {"arm", "elbow", "shoulder", "wrist", "pain"}
+
 # ---------------------------------------------------------------------------
 # Soft scoring weights - tune these numbers without touching any logic
 # below. Bigger weight = that signal matters more when ranking survivors.
@@ -90,6 +106,41 @@ STYLE_MATCH_WEIGHT = 3.0        # profile matches player's stated style
 SIDE_MATCH_WEIGHT = 2.0         # profile matches the lean of their court side
 BUDGET_FIT_WEIGHT = 2.0         # sitting comfortably under budget vs at the ceiling
 FREQUENCY_DURABILITY_PENALTY = 2.0  # subtracted from the cheapest tier for frequent players
+
+# Points per matching dimension (shape / core hardness / balance)
+# shared with a previous racket the player loved or disliked. 1.0, not
+# higher: a candidate matching all three dimensions against one loved
+# racket caps out at +3.0 - comparable to, not exceeding,
+# STYLE_MATCH_WEIGHT, the strongest existing single signal. Kept
+# deliberately moderate rather than heavy because shape/core data is
+# inferred throughout this catalogue (see PRODUCT.md's catalogue
+# note) - a wrong spec on their OLD racket would otherwise propagate
+# confidently into the new recommendation.
+PREVIOUS_RACKET_SIMILARITY_WEIGHT = 1.0
+
+# Normalises the catalogue's raw `core` strings into a hardness tier
+# for comparison. A lookup table, not substring matching ("hard" in
+# core), because the catalogue only ever contains these exact six
+# strings - an explicit table is more precise and fails safely (via
+# .get(..., "") below) if a value outside this set ever shows up.
+#
+# Two deliberate choices here:
+# - bare "EVA" (the single most common value - 277 of 521 rows) maps
+#   to "" (unknown), not a guessed tier. It carries no hardness
+#   qualifier in the data, so treating it as e.g. "medium" would be
+#   inventing a spec, not reading one.
+# - "foam" gets its OWN tier rather than folding into "soft". Foam is
+#   a different core construction, not just a softness point on the
+#   EVA spectrum, so treating a foam core as equivalent to soft EVA
+#   would assert a similarity this data doesn't actually support.
+CORE_HARDNESS_TIERS = {
+    "soft EVA": "soft",
+    "medium EVA": "medium",
+    "hard EVA": "hard",
+    "foam": "foam",
+    "EVA": "",
+    "": "",
+}
 
 # Points awarded per availability tier - how widely stocked the racket
 # is across retailers.
@@ -153,6 +204,12 @@ VALID_SIDES = ("left", "right", "either")
 VALID_STYLES = tuple(STYLE_TO_PROFILE)
 VALID_FREQUENCIES = ("occasional", "weekly", "often")
 
+# How a player can rate a previous racket. "fine" is deliberately
+# neutral - it contributes to neither the reward nor the penalty side
+# of the similarity score (see _similarity_score), because "fine"
+# genuinely doesn't indicate a strong preference either way.
+VALID_RATINGS = ("loved", "fine", "disliked")
+
 # ---------------------------------------------------------------------------
 # Diversity limits - applied after scoring, to stop one brand or one
 # model line from crowding out everything else in the final list.
@@ -191,11 +248,46 @@ def _level_within_band(racket_level, player_level):
     return abs(racket_position - player_position) <= LEVEL_BAND_TOLERANCE
 
 
-def _passes_hard_filters(racket, player):
+def _mentions_pain(text):
+    """
+    Case-insensitive keyword match against PAIN_KEYWORDS. Simple on
+    purpose - see the comment on PAIN_KEYWORDS for why a few false
+    positives are an accepted tradeoff here, not a bug to fix later.
+    """
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in PAIN_KEYWORDS)
+
+
+def _effective_arm_issues(player):
+    """
+    True if arm_issues should be treated as True for this request -
+    either the player ticked the checkbox directly, or they described
+    pain in the free-text notes on a racket they DISLIKED.
+
+    Deliberately scoped to disliked rackets only: pain mentioned about
+    a LOVED racket ("finally, no elbow pain") is the opposite signal,
+    not a red flag, and is left alone here.
+    """
+    if player.get("arm_issues"):
+        return True
+
+    for previous in player.get("previous_rackets", []):
+        if previous.get("rating") == "disliked" and _mentions_pain(previous.get("notes", "")):
+            return True
+
+    return False
+
+
+def _passes_hard_filters(racket, player, arm_issues, owned_names):
     """
     The yes/no gate. Returns True only if this racket is a legal option
     for this player at all - says nothing about how *good* an option it
     is, that's soft scoring's job.
+
+    arm_issues is passed in already resolved (see _effective_arm_issues)
+    rather than read from player directly here, so this function has
+    exactly one job - checking gates - and the "should pain language in
+    free text count as arm_issues" decision lives in exactly one place.
 
     Order matters a little for readability (cheapest/most obvious
     checks first) but not for correctness - every check here is
@@ -204,6 +296,13 @@ def _passes_hard_filters(racket, player):
     # We cannot responsibly recommend a racket we don't even know the
     # shape of - that's the one spec we refuse to guess on.
     if not racket["shape"]:
+        return False
+
+    # Never recommend a racket the player told us they already own,
+    # regardless of how they rated it - PRODUCT.md's honesty rules are
+    # about finding something that suits them, and "buy the racket you
+    # already have" was never a real option.
+    if racket["name"] in owned_names:
         return False
 
     price = racket["price_zar"]
@@ -217,7 +316,7 @@ def _passes_hard_filters(racket, player):
     if not _level_within_band(racket["level"], player["level"]):
         return False
 
-    if player.get("arm_issues"):
+    if arm_issues:
         if racket["core"] in HARD_CORES:
             return False
         if racket["surface"] in HIGH_GRADE_CARBON_SURFACES:
@@ -257,7 +356,62 @@ def _price_band(price, band_min, band_max):
     return min(band, PRICE_BAND_COUNT - 1)
 
 
-def _soft_score(racket, player, budget_min, budget_max, price_band):
+def _core_hardness_tier(core):
+    """
+    Looks up the hardness tier for a raw `core` string via
+    CORE_HARDNESS_TIERS, defaulting to "" (unknown) for anything not in
+    that table - the same defensive .get(..., default) pattern used by
+    AVAILABILITY_SCORES and STOCK_STATUS_SCORES above, so one unexpected
+    value in the data can't crash a request.
+    """
+    return CORE_HARDNESS_TIERS.get(core, "")
+
+
+def _similarity_score(racket, resolved_previous_rackets):
+    """
+    Rewards a candidate for sharing shape / core hardness / balance
+    with a racket the player loved, and penalises it for sharing them
+    with one they disliked. A "fine" rating (or anything else) is
+    skipped entirely - it isn't a clear signal in either direction.
+
+    Two previous rackets combine by plain addition - there's no special
+    case for one being loved and the other disliked. If they happen to
+    share a spec with the same candidate, the reward and penalty simply
+    cancel out, which is the correct outcome: a spec present in both a
+    loved and a hated racket isn't actually telling us anything about
+    this candidate.
+
+    Blank/unknown values never count as a match on either side - two
+    rackets both having an unknown core hardness is not the same claim
+    as two rackets genuinely sharing a hardness tier.
+    """
+    score = 0.0
+
+    for previous in resolved_previous_rackets:
+        if previous["rating"] == "loved":
+            sign = 1.0
+        elif previous["rating"] == "disliked":
+            sign = -1.0
+        else:
+            continue
+
+        previous_racket = previous["racket"]
+
+        if racket["shape"] and racket["shape"] == previous_racket["shape"]:
+            score += sign * PREVIOUS_RACKET_SIMILARITY_WEIGHT
+
+        candidate_tier = _core_hardness_tier(racket["core"])
+        previous_tier = _core_hardness_tier(previous_racket["core"])
+        if candidate_tier and candidate_tier == previous_tier:
+            score += sign * PREVIOUS_RACKET_SIMILARITY_WEIGHT
+
+        if racket["balance"] and racket["balance"] == previous_racket["balance"]:
+            score += sign * PREVIOUS_RACKET_SIMILARITY_WEIGHT
+
+    return score
+
+
+def _soft_score(racket, player, budget_min, budget_max, price_band, resolved_previous_rackets):
     """
     Ranks a racket that has already survived the hard filters. Every
     signal below adds (or subtracts) independently, so the final score
@@ -276,6 +430,7 @@ def _soft_score(racket, player, budget_min, budget_max, price_band):
 
     score += AVAILABILITY_SCORES.get(racket["availability"], 0.0)
     score += STOCK_STATUS_SCORES.get(racket["stock_status"], 0.0)
+    score += _similarity_score(racket, resolved_previous_rackets)
 
     # "Comfortably inside budget" = a fraction from 0 (priced right at
     # the ceiling) to 1 (priced right at the floor). Multiplying by the
@@ -475,7 +630,12 @@ def recommend(player, catalogue):
 
     player:     dict matching the shape described in the module
                 docstring's caller contract (level, side, style,
-                budget_max, budget_min, arm_issues, frequency).
+                budget_max, budget_min, arm_issues, frequency,
+                previous_rackets). previous_rackets is optional and
+                defaults to empty - a list of up to 2 dicts, each
+                {"name": <a real catalogue racket name>,
+                 "rating": one of VALID_RATINGS,
+                 "notes": optional free text}.
     catalogue:  list of racket dicts, as produced by catalogue.py.
 
     Returns a list of up to MAX_RESULTS racket dicts, best match first,
@@ -485,7 +645,29 @@ def recommend(player, catalogue):
     size - if only three rackets are genuinely legal options, three is
     what comes back.
     """
-    hard_survivors = [racket for racket in catalogue if _passes_hard_filters(racket, player)]
+    previous_rackets = player.get("previous_rackets", [])
+    owned_names = {previous["name"] for previous in previous_rackets}
+    arm_issues = _effective_arm_issues(player)
+
+    # Resolve each previous racket's name to its real catalogue data
+    # ONCE here, rather than re-looking-it-up inside _similarity_score
+    # on every one of hundreds of scoring calls. A name that doesn't
+    # match anything in the catalogue is dropped rather than crashing -
+    # not expected to happen, since app.py's own validation checks this
+    # before recommend() ever runs, but recommend() doesn't get to
+    # assume its caller got that right.
+    catalogue_by_name = {racket["name"]: racket for racket in catalogue}
+    resolved_previous_rackets = [
+        {"racket": catalogue_by_name[previous["name"]], "rating": previous.get("rating")}
+        for previous in previous_rackets
+        if previous["name"] in catalogue_by_name
+    ]
+
+    hard_survivors = [
+        racket
+        for racket in catalogue
+        if _passes_hard_filters(racket, player, arm_issues, owned_names)
+    ]
 
     if not hard_survivors:
         return []
@@ -508,7 +690,9 @@ def recommend(player, catalogue):
         # state that every request reuses, so writing extra keys
         # straight onto it would leak between requests.
         enriched = dict(racket)
-        enriched["_score"] = _soft_score(racket, player, budget_min, budget_max, price_band)
+        enriched["_score"] = _soft_score(
+            racket, player, budget_min, budget_max, price_band, resolved_previous_rackets
+        )
         enriched["_model_line"] = _model_line(racket["name"], racket["brand"])
         enriched["_price_band"] = price_band
         scored.append(enriched)

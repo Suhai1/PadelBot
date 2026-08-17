@@ -77,6 +77,17 @@ MAX_BUDGET_ZAR = 50_000
 # them again as a bare, unhedged field on the card would undo that.
 _CARD_FIELDS = ("name", "brand", "price_zar", "shape", "url")
 
+# Matches the frontend's "up to 2 previous rackets" design. Not a
+# recommender.py concern - this is purely "how much can one request
+# ask us to process", the same category of sanity bound as
+# MIN_BUDGET_ZAR/MAX_BUDGET_ZAR above.
+MAX_PREVIOUS_RACKETS = 2
+
+# Caps the free-text "notes" field, which goes directly into the
+# Gemini prompt (see ai.py) - this bounds how much untrusted text one
+# request can inject into a prompt, not just a UI nicety.
+MAX_NOTES_LENGTH = 500
+
 
 class ValidationError(Exception):
     """
@@ -157,7 +168,78 @@ def _validate_profile(data):
     if budget_min is not None:
         profile["budget_min"] = budget_min
 
+    previous_rackets = data.get("previous_rackets")
+    if previous_rackets is not None:
+        profile["previous_rackets"] = _validate_previous_rackets(previous_rackets)
+
     return profile
+
+
+def _validate_previous_rackets(previous_rackets):
+    """
+    Validates the optional "rackets the player already used" list.
+    Every name is checked against the REAL catalogue, not trusted
+    blindly - recommender.py's owned-racket exclusion and similarity
+    scoring both assume every entry resolves to an actual racket, and
+    this is the one place that guarantee gets enforced before anything
+    downstream relies on it.
+
+    Also resolves and attaches each racket's shape/core/balance from
+    the catalogue onto the cleaned entry - ai.py needs these to
+    describe the comparison in the prompt, and this is the natural
+    place to do it: we're already looking each name up here to check
+    it's real, so pulling its specs at the same time avoids a second
+    catalogue pass elsewhere. recommender.py does its own independent
+    lookup against the `catalogue` list it's given directly, so these
+    extra keys just ride along unused when this dict reaches it.
+
+    Returns a clean list built only from known-good fields, same
+    reasoning as _validate_profile: never pass the raw client dict
+    through to the services layer.
+    """
+    if not isinstance(previous_rackets, list):
+        raise ValidationError("'previous_rackets' must be a list.")
+    if len(previous_rackets) > MAX_PREVIOUS_RACKETS:
+        raise ValidationError(f"'previous_rackets' can have at most {MAX_PREVIOUS_RACKETS} entries.")
+
+    # Built once here, not once per entry - a dict lookup by name is
+    # one hash lookup; scanning the whole 521-row catalogue for every
+    # entry would still be fast at this size, but there's no reason to
+    # do it the slow way.
+    catalogue_by_name = {racket["name"]: racket for racket in catalogue.get_all()}
+
+    cleaned = []
+    for entry in previous_rackets:
+        if not isinstance(entry, dict):
+            raise ValidationError("Each entry in 'previous_rackets' must be an object.")
+
+        name = entry.get("name")
+        racket = catalogue_by_name.get(name)
+        if racket is None:
+            raise ValidationError(f"'previous_rackets' contains a racket not in the catalogue: {name!r}.")
+
+        rating = entry.get("rating")
+        if rating not in recommender.VALID_RATINGS:
+            raise ValidationError(f"'rating' must be one of {sorted(recommender.VALID_RATINGS)}.")
+
+        notes = entry.get("notes", "")
+        if not isinstance(notes, str):
+            raise ValidationError("'notes' must be text.")
+        if len(notes) > MAX_NOTES_LENGTH:
+            raise ValidationError(f"'notes' must be {MAX_NOTES_LENGTH} characters or fewer.")
+
+        cleaned_entry = {
+            "name": name,
+            "rating": rating,
+            "shape": racket["shape"],
+            "core": racket["core"],
+            "balance": racket["balance"],
+        }
+        if notes:
+            cleaned_entry["notes"] = notes
+        cleaned.append(cleaned_entry)
+
+    return cleaned
 
 
 def _attach_racket_details(ai_result, shortlist):
@@ -195,6 +277,25 @@ def _attach_racket_details(ai_result, shortlist):
 # ---------------------------------------------------------------------------
 
 
+def _racket_search_index():
+    """
+    A compact {name, brand, price_zar} entry per racket, for the
+    "which racket did you used to play with" search widget in
+    script.js. Deliberately not the full racket dict - the widget only
+    needs enough to show a human a recognisable result and to submit a
+    name back to /api/recommend, not shape/core/every other field.
+
+    At 521 rackets this comes to roughly 30KB serialised - small enough
+    to embed directly in the page via Jinja's |tojson, one render, no
+    extra network round-trip for a dedicated search endpoint. Would be
+    worth revisiting if the catalogue ever grew into the thousands.
+    """
+    return [
+        {"name": racket["name"], "brand": racket["brand"], "price_zar": racket["price_zar"]}
+        for racket in catalogue.get_all()
+    ]
+
+
 @app.route("/", methods=["GET"])
 def index():
     # Passing these in rather than hardcoding <option> tags in the
@@ -208,6 +309,9 @@ def index():
         sides=recommender.VALID_SIDES,
         styles=recommender.VALID_STYLES,
         frequencies=recommender.VALID_FREQUENCIES,
+        ratings=recommender.VALID_RATINGS,
+        racket_search_index=_racket_search_index(),
+        max_previous_rackets=MAX_PREVIOUS_RACKETS,
     )
 
 

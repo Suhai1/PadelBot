@@ -144,3 +144,143 @@ def test_tracker_counts_match_through_swap_at_cap():
     assert tracker.brand_counts["Head"] == recommender.MAX_PER_BRAND - 1
     assert tracker.brand_counts["Bullpadel"] == 1
     assert len(tracker.selected) == recommender.MAX_PER_BRAND
+
+
+# ---------------------------------------------------------------------------
+# Previous rackets - the capture-based signals: similarity scoring,
+# the arm-issues override from pain language in free-text notes, and
+# the owned-racket exclusion. Real catalogue data throughout, same
+# convention as the rest of this file: a hand-built fake catalogue
+# could hide a case where a real racket's blank/messy spec breaks one
+# of these checks.
+# ---------------------------------------------------------------------------
+
+# A wide-open, level/budget-agnostic player profile - hard filters
+# should exclude as little of the catalogue as possible, so the tests
+# below are actually comparing scores for the SAME surviving rackets
+# across two runs, not accidentally testing filtering instead.
+_PERMISSIVE_PLAYER = {
+    "level": "advanced",
+    "side": "either",
+    "style": "balanced",
+    "budget_max": 25000,
+    "arm_issues": False,
+    "frequency": "occasional",
+}
+
+
+def test_disliked_racket_shape_is_down_weighted(catalogue):
+    """
+    A candidate sharing shape with a racket the player disliked should
+    score measurably lower than the same candidate scores when there's
+    no previous-racket signal at all - not just theoretically wired in,
+    visibly subtracting points in the real, scored output.
+    """
+    disliked = next(r for r in catalogue if r["shape"] == "diamond" and r["core"])
+    player_with_dislike = {
+        **_PERMISSIVE_PLAYER,
+        "previous_rackets": [{"name": disliked["name"], "rating": "disliked"}],
+    }
+
+    baseline = {r["name"]: r["_score"] for r in recommender.recommend(_PERMISSIVE_PLAYER, catalogue)}
+    with_dislike = {r["name"]: r["_score"] for r in recommender.recommend(player_with_dislike, catalogue)}
+
+    by_name = {r["name"]: r for r in catalogue}
+    same_shape_in_both = [
+        name
+        for name in baseline
+        if name in with_dislike and by_name[name]["shape"] == "diamond" and name != disliked["name"]
+    ]
+
+    assert same_shape_in_both, "no overlapping diamond-shaped racket survived both runs - test setup problem"
+    for name in same_shape_in_both:
+        assert with_dislike[name] < baseline[name], f"{name} did not score lower after a diamond racket was disliked"
+
+
+def test_loved_racket_shape_is_rewarded(catalogue):
+    """The reward side of the same signal, for symmetry - a loved racket should push matching candidates UP, not just a disliked one pushing them down."""
+    loved = next(r for r in catalogue if r["shape"] == "diamond" and r["core"])
+    player_with_love = {
+        **_PERMISSIVE_PLAYER,
+        "previous_rackets": [{"name": loved["name"], "rating": "loved"}],
+    }
+
+    baseline = {r["name"]: r["_score"] for r in recommender.recommend(_PERMISSIVE_PLAYER, catalogue)}
+    with_love = {r["name"]: r["_score"] for r in recommender.recommend(player_with_love, catalogue)}
+
+    by_name = {r["name"]: r for r in catalogue}
+    same_shape_in_both = [
+        name
+        for name in baseline
+        if name in with_love and by_name[name]["shape"] == "diamond" and name != loved["name"]
+    ]
+
+    assert same_shape_in_both, "no overlapping diamond-shaped racket survived both runs - test setup problem"
+    for name in same_shape_in_both:
+        assert with_love[name] > baseline[name], f"{name} did not score higher after a diamond racket was loved"
+
+
+def test_pain_language_triggers_arm_issues_exclusions(catalogue):
+    """
+    The safety-critical case: arm_issues=False on the checkbox, but the
+    free-text notes on a DISLIKED racket mention pain. No hard-core,
+    high-grade-carbon, or diamond-shaped racket should reach the
+    results - the same guarantee as if arm_issues had been ticked
+    directly.
+
+    A control run (same disliked racket, notes WITHOUT pain language)
+    is checked too, and asserted to still contain dangerous-shape
+    rackets - proving the exclusion is genuinely conditional on the
+    pain language, not coincidentally empty for some unrelated reason.
+    """
+    disliked = next(r for r in catalogue if r["shape"] == "diamond" and r["core"] == "hard EVA")
+
+    def _is_dangerous(racket):
+        return (
+            racket["core"] in recommender.HARD_CORES
+            or racket["surface"] in recommender.HIGH_GRADE_CARBON_SURFACES
+            or racket["shape"] == recommender.POWER_SHAPE
+        )
+
+    player_with_pain = {
+        **_PERMISSIVE_PLAYER,
+        "previous_rackets": [
+            {"name": disliked["name"], "rating": "disliked", "notes": "too stiff, my elbow was aching afterwards"}
+        ],
+    }
+    results_with_pain = recommender.recommend(player_with_pain, catalogue)
+    assert not any(_is_dangerous(r) for r in results_with_pain)
+
+    player_without_pain = {
+        **_PERMISSIVE_PLAYER,
+        "previous_rackets": [{"name": disliked["name"], "rating": "disliked", "notes": "just not my style"}],
+    }
+    results_without_pain = recommender.recommend(player_without_pain, catalogue)
+    assert any(_is_dangerous(r) for r in results_without_pain), (
+        "control run with no pain language should still contain dangerous-shape rackets - "
+        "otherwise this test can't prove the exclusion is conditional on the pain language"
+    )
+
+
+def test_owned_racket_never_appears_in_results(catalogue):
+    """
+    Never recommend a racket the player already told us they own -
+    regardless of how they rated it.
+
+    The "owned" racket here must be one that would otherwise genuinely
+    survive _PERMISSIVE_PLAYER's hard filters and rank well enough to
+    appear in the top MAX_RESULTS - otherwise this test could pass
+    vacuously, "proving" an exclusion that was never actually exercised
+    because the racket was never going to show up anyway. Picked from
+    _PERMISSIVE_PLAYER's own baseline results for exactly that reason.
+    """
+    baseline_names = {r["name"] for r in recommender.recommend(_PERMISSIVE_PLAYER, catalogue)}
+    owned = next(r for r in catalogue if r["name"] in baseline_names)
+
+    for rating in recommender.VALID_RATINGS:
+        player = {**_PERMISSIVE_PLAYER, "previous_rackets": [{"name": owned["name"], "rating": rating}]}
+        results = recommender.recommend(player, catalogue)
+
+        assert owned["name"] not in {r["name"] for r in results}, (
+            f'owned racket "{owned["name"]}" appeared in results despite rating "{rating}"'
+        )

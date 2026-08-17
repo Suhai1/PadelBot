@@ -209,12 +209,290 @@ function renderResults(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Previous rackets - optional, up to window.MAX_PREVIOUS_RACKETS slots,
+// none of which exist in the markup until "+ Add a racket" is clicked.
+//
+// Consistent with the rest of this file: no slot state lives in a
+// parallel JS object. Everything script.js needs to know about a slot
+// - which racket was picked, the rating, the notes - is read straight
+// back off the DOM at submit time. That's the same instinct behind
+// budgetInput.value driving the whole budget flow: the DOM elements
+// ARE the state, so there is nothing that can drift out of sync with
+// what the player actually sees on screen.
+// ---------------------------------------------------------------------------
+
+const previousRacketSlotsContainer = document.getElementById("previous-racket-slots");
+const addPreviousRacketButton = document.getElementById("add-previous-racket");
+let nextSlotId = 0; // ever-incrementing, only used to keep radio group names unique - never reused, even after a slot is removed
+
+function syncAddButtonVisibility() {
+  const slotCount = previousRacketSlotsContainer.querySelectorAll(".previous-racket-slot").length;
+  addPreviousRacketButton.disabled = slotCount >= window.MAX_PREVIOUS_RACKETS;
+}
+
+/**
+ * Renumbers the visible "Racket 1" / "Racket 2" titles to match
+ * current position, not creation order - otherwise removing the
+ * first of two slots would leave a lone slot confusingly labelled
+ * "Racket 2".
+ */
+function retitleSlots() {
+  const slots = previousRacketSlotsContainer.querySelectorAll(".previous-racket-slot");
+  slots.forEach((slot, index) => {
+    slot.querySelector(".previous-racket-slot__title").textContent = `Racket ${index + 1}`;
+  });
+}
+
+/**
+ * The "which racket?" search widget. Filters window.RACKET_SEARCH_INDEX
+ * (embedded in the page by app.py's index() route, from the real
+ * catalogue) as the player types, entirely client-side - 521 rackets
+ * is small enough that there's no need for this to hit the network.
+ *
+ * The selected racket's name lives in a hidden input inside the
+ * returned element (class "previous-racket-slot__selected-name"),
+ * queryable later without this function needing to hand back any kind
+ * of accessor object.
+ */
+function buildRacketSearch() {
+  const wrapper = document.createElement("div");
+  wrapper.className = "racket-search";
+
+  const selectedNameInput = document.createElement("input");
+  selectedNameInput.type = "hidden";
+  selectedNameInput.className = "previous-racket-slot__selected-name";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "racket-search__input";
+  input.placeholder = "Start typing a brand or racket name...";
+  input.autocomplete = "off";
+
+  const results = document.createElement("ul");
+  results.className = "racket-search__results";
+
+  function showSearchField() {
+    const selectedRow = wrapper.querySelector(".racket-search__selected");
+    if (selectedRow) selectedRow.remove();
+    input.style.display = "";
+    results.style.display = "";
+    input.focus();
+  }
+
+  function showSelected(racket) {
+    input.style.display = "none";
+    results.textContent = "";
+    results.style.display = "none";
+
+    const selectedRow = document.createElement("div");
+    selectedRow.className = "racket-search__selected";
+
+    const label = document.createElement("span");
+    label.textContent = `${racket.brand} - ${racket.name}`;
+
+    const clearButton = document.createElement("button");
+    clearButton.type = "button";
+    clearButton.className = "racket-search__clear";
+    clearButton.textContent = "Change";
+    clearButton.addEventListener("click", () => {
+      selectedNameInput.value = "";
+      input.value = "";
+      showSearchField();
+    });
+
+    selectedRow.append(label, clearButton);
+    wrapper.append(selectedRow);
+  }
+
+  function selectRacket(racket) {
+    selectedNameInput.value = racket.name;
+    showSelected(racket);
+  }
+
+  function renderResults(query) {
+    results.textContent = "";
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    const lowerQuery = trimmed.toLowerCase();
+    const matches = window.RACKET_SEARCH_INDEX.filter((racket) =>
+      `${racket.brand} ${racket.name}`.toLowerCase().includes(lowerQuery)
+    ).slice(0, 8);
+
+    if (matches.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "racket-search__result";
+      empty.textContent = "No match in our catalogue - fine to skip this one.";
+      results.append(empty);
+      return;
+    }
+
+    matches.forEach((racket) => {
+      const item = document.createElement("li");
+      item.className = "racket-search__result";
+      item.tabIndex = 0;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = `${racket.brand} - ${racket.name} `;
+      const priceSpan = document.createElement("span");
+      priceSpan.className = "racket-search__result-price";
+      priceSpan.textContent = formatRand(racket.price_zar);
+      item.append(nameSpan, priceSpan);
+
+      item.addEventListener("click", () => selectRacket(racket));
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") selectRacket(racket);
+      });
+
+      results.append(item);
+    });
+  }
+
+  input.addEventListener("input", () => renderResults(input.value));
+
+  wrapper.append(selectedNameInput, input, results);
+  return wrapper;
+}
+
+/**
+ * A row of toggle-style buttons backed by real radio inputs (see the
+ * CSS - the inputs are visually hidden, not display:none, so this
+ * stays keyboard- and screen-reader-navigable). groupName must be
+ * unique across the whole page, or two slots' radio groups would
+ * fight over the same selection.
+ */
+function buildRatingGroup(groupName) {
+  const group = document.createElement("div");
+  group.className = "rating-group";
+
+  // "fine" is the neutral default the moment a slot exists, not
+  // something that waits for a racket to be picked first - simpler
+  // than coordinating between two separate widgets, and there's
+  // always a sensible value to read back even if the player never
+  // touches this control.
+  const defaultRating = window.RATING_OPTIONS.includes("fine") ? "fine" : window.RATING_OPTIONS[0];
+
+  window.RATING_OPTIONS.forEach((rating) => {
+    const inputId = `${groupName}-${rating}`;
+
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = groupName;
+    input.id = inputId;
+    input.value = rating;
+    if (rating === defaultRating) {
+      input.checked = true;
+    }
+
+    const label = document.createElement("label");
+    label.htmlFor = inputId;
+    label.textContent = rating.charAt(0).toUpperCase() + rating.slice(1);
+
+    group.append(input, label);
+  });
+
+  return group;
+}
+
+function buildPreviousRacketSlot() {
+  nextSlotId += 1;
+
+  const slot = document.createElement("div");
+  slot.className = "previous-racket-slot";
+
+  const header = document.createElement("div");
+  header.className = "previous-racket-slot__header";
+
+  const title = document.createElement("span");
+  title.className = "previous-racket-slot__title"; // text set by retitleSlots() once this is in the DOM
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "previous-racket-slot__remove";
+  removeButton.textContent = "Remove";
+  removeButton.addEventListener("click", () => {
+    slot.remove();
+    retitleSlots();
+    syncAddButtonVisibility();
+  });
+
+  header.append(title, removeButton);
+
+  const searchField = document.createElement("div");
+  searchField.className = "field";
+  const searchLabel = document.createElement("label");
+  searchLabel.textContent = "Which racket?";
+  searchField.append(searchLabel, buildRacketSearch());
+
+  const ratingField = document.createElement("div");
+  ratingField.className = "field";
+  const ratingLabel = document.createElement("label");
+  ratingLabel.textContent = "How did you feel about it?";
+  ratingField.append(ratingLabel, buildRatingGroup(`previous-racket-rating-${nextSlotId}`));
+
+  const notesField = document.createElement("div");
+  notesField.className = "field";
+  const notesLabel = document.createElement("label");
+  notesLabel.textContent = "What did you like or not like about it? (optional)";
+
+  const notesMaxLength = 500; // must match app.py's MAX_NOTES_LENGTH
+  const notes = document.createElement("textarea");
+  notes.className = "previous-racket-slot__notes";
+  notes.maxLength = notesMaxLength;
+
+  const notesCount = document.createElement("p");
+  notesCount.className = "previous-racket-slot__notes-count";
+  notesCount.textContent = `0/${notesMaxLength}`;
+  notes.addEventListener("input", () => {
+    notesCount.textContent = `${notes.value.length}/${notesMaxLength}`;
+  });
+
+  notesField.append(notesLabel, notes, notesCount);
+
+  slot.append(header, searchField, ratingField, notesField);
+  return slot;
+}
+
+addPreviousRacketButton.addEventListener("click", () => {
+  previousRacketSlotsContainer.append(buildPreviousRacketSlot());
+  retitleSlots();
+  syncAddButtonVisibility();
+});
+
+/**
+ * Reads previous-racket data straight off the DOM. A slot with no
+ * racket selected is skipped entirely, not sent as a half-empty entry
+ * - the search widget always has a rating default, so "no racket
+ * chosen" is the only way a slot can be genuinely incomplete.
+ */
+function collectPreviousRackets() {
+  const slots = previousRacketSlotsContainer.querySelectorAll(".previous-racket-slot");
+  const previousRackets = [];
+
+  slots.forEach((slot) => {
+    const name = slot.querySelector(".previous-racket-slot__selected-name").value;
+    if (!name) return;
+
+    const checkedRating = slot.querySelector(".rating-group input[type='radio']:checked");
+    const notes = slot.querySelector(".previous-racket-slot__notes").value.trim();
+
+    const entry = { name: name, rating: checkedRating ? checkedRating.value : window.RATING_OPTIONS[0] };
+    if (notes) {
+      entry.notes = notes;
+    }
+    previousRackets.push(entry);
+  });
+
+  return previousRackets;
+}
+
+// ---------------------------------------------------------------------------
 // Form submission
 // ---------------------------------------------------------------------------
 
 function collectProfile() {
   const formData = new FormData(form);
-  return {
+  const profile = {
     level: formData.get("level"),
     side: formData.get("side"),
     style: formData.get("style"),
@@ -228,6 +506,13 @@ function collectProfile() {
     arm_issues: form.elements["arm-issues"].checked,
     frequency: formData.get("frequency"),
   };
+
+  const previousRackets = collectPreviousRackets();
+  if (previousRackets.length > 0) {
+    profile.previous_rackets = previousRackets;
+  }
+
+  return profile;
 }
 
 async function handleSubmit(event) {
