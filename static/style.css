@@ -1,0 +1,336 @@
+/*
+  style.css - all visual design for the site lives here, nowhere else.
+  Deliberately not trying to look like a generic SaaS template: no
+  rounded-everything cards, no soft glowing shadows, no blue/purple
+  gradient hero, no tabs. The brief for this page is closer to "a
+  well-made spec sheet" than "a marketing landing page", so the design
+  leans into that - a warm paper-like background, a serif heading font
+  paired with a plain sans body, sharp/minimal corners, and a single
+  accent colour instead of a rainbow of them.
+*/
+
+:root {
+  /* Colour palette - warm and paper-like rather than clinical white,
+     with one deliberate accent (a deep court green) instead of the
+     blue/purple gradients most AI-generated UIs default to. */
+  --bg: #f7f3ec;
+  --panel: #fffdf8;
+  --ink: #1c1b18;
+  --muted: #6f6a5c;
+  --border: #ddd6c4;
+  --accent: #205c3b;
+  --accent-hover: #17482d;
+  --accent-ink: #ffffff;
+  --warn: #a6431f;
+  --error: #a02c2c;
+  --error-bg: #f8e9e6;
+
+  /* 3px, not 12-16px - a small, deliberate amount of softening rather
+     than the fully-rounded-corners look most template generators reach
+     for by default. */
+  --radius: 3px;
+
+  /* All three stacks are fonts already installed on every device -
+     zero network requests, which is also why this satisfies "no CDN"
+     for free. Serif for headings/names gives the page a distinct
+     identity instead of system-ui everywhere; monospace for numbers
+     (price) makes them easy to visually compare at a glance. */
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.55;
+}
+
+/*
+  Every major section shares this same max-width and centering, which
+  is what keeps the whole page reading as one deliberate column instead
+  of a wide dashboard. On a phone this max-width never kicks in - the
+  section is just as wide as the screen minus body's padding - so
+  "works on a phone" comes for free without a single media query for
+  layout width.
+*/
+.site-header,
+.profile-form,
+.status,
+.results,
+.site-footer {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ---------------------------------------------------------------- */
+/* Header                                                            */
+/* ---------------------------------------------------------------- */
+
+.site-header {
+  padding-top: 3rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header__eyebrow {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.site-header__title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-serif);
+  font-size: 2.5rem;
+  font-weight: 600;
+}
+
+.site-header__tagline {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- */
+/* Form                                                               */
+/* ---------------------------------------------------------------- */
+
+.profile-form {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.field select,
+.field input[type="range"] {
+  font: inherit;
+}
+
+.field select {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.field--checkbox {
+  flex-direction: row;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.field--checkbox label {
+  font-weight: 400;
+}
+
+.field--checkbox input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  /* Tints the browser's own native checkbox with our accent colour
+     instead of the default blue - one line, no custom checkbox markup
+     needed. */
+  accent-color: var(--accent);
+}
+
+.field input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+#budget-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.submit-button {
+  margin-top: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit-button:hover {
+  background: var(--accent-hover);
+}
+
+.submit-button:disabled {
+  background: var(--muted);
+  cursor: progress;
+}
+
+/* ---------------------------------------------------------------- */
+/* Status - loading and error messages. Empty by default and hidden   */
+/* via :empty, so no leftover box takes up space before a submit.     */
+/* ---------------------------------------------------------------- */
+
+.status:empty {
+  display: none;
+}
+
+.status {
+  margin-top: 1.5rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+}
+
+.status--loading {
+  border: 1px dashed var(--border);
+  color: var(--muted);
+}
+
+.status--error {
+  border: 1px solid var(--error);
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+/* ---------------------------------------------------------------- */
+/* Results                                                            */
+/* ---------------------------------------------------------------- */
+
+.results:empty {
+  display: none;
+}
+
+.results {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.results-note {
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+}
+
+.results-count {
+  margin: -0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Cards - deliberately NOT the rounded-corner-plus-soft-shadow look.
+   A plain hairline border reads more like a printed spec sheet than a
+   floating UI panel, which is the point. Stacked vertically rather
+   than a 3-column grid, too - a vertical list is a smaller visual jump
+   from "generic AI 3-card grid" than it might sound, and it means the
+   layout never has to change between phone and desktop. */
+.racket-card {
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.racket-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.racket-card__name {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+}
+
+.racket-card__price {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.racket-card__meta {
+  margin: 0.3rem 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.racket-card__why {
+  margin: 0 0 0.75rem;
+}
+
+.racket-card__tradeoff {
+  margin: 0 0 1rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--warn);
+  color: var(--muted);
+}
+
+.racket-card__tradeoff-label {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.racket-card__link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent);
+}
+
+.racket-card__link:hover {
+  opacity: 0.7;
+}
+
+/* ---------------------------------------------------------------- */
+/* Footer                                                             */
+/* ---------------------------------------------------------------- */
+
+.site-footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Only real breakpoint in the whole file: below ~420px a long racket
+   name can crowd the price onto the same line uncomfortably, so they
+   drop to stacking vertically instead of side by side. */
+@media (max-width: 420px) {
+  .racket-card__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .site-header__title {
+    font-size: 2rem;
+  }
+}

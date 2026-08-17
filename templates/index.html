@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Without this, mobile browsers render the page at desktop width
+       (~980px) and shrink it to fit, making everything tiny until you
+       pinch-zoom. This tells the phone "render at the device's actual
+       width" - the single most important line for "works on a phone". -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PadelPal - find your racket</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <header class="site-header">
+    <p class="site-header__eyebrow">South African padel</p>
+    <h1 class="site-header__title">PadelPal</h1>
+    <p class="site-header__tagline">
+      Tell us how you play. We'll suggest three rackets that genuinely
+      suit you - and say so plainly if nothing here does.
+    </p>
+  </header>
+
+  <main>
+    <!-- novalidate: we do our own validation in script.js so we can
+         show one consistent error style, instead of each browser's
+         own built-in validation bubble looking slightly different. -->
+    <form id="profile-form" class="profile-form" novalidate>
+
+      <div class="field">
+        <label for="level">Playing level</label>
+        <select id="level" name="level" required>
+          <!-- These options come from recommender.py's LEVEL_ORDER via
+               app.py's render_template() call, not typed out by hand
+               here - the exact list the backend will actually accept. -->
+          {% for level in levels %}
+          <option value="{{ level }}">{{ level|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="side">Side of court</label>
+        <select id="side" name="side" required>
+          {% for side in sides %}
+          <option value="{{ side }}">{{ side|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="style">Playing style</label>
+        <select id="style" name="style" required>
+          {% for style in styles %}
+          <option value="{{ style }}">{{ style|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="frequency">How often do you play</label>
+        <select id="frequency" name="frequency" required>
+          {% for frequency in frequencies %}
+          <option value="{{ frequency }}">{{ frequency|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <!-- <output> is a native form element built for exactly this -
+             the live result of a calculation tied to other form
+             controls. script.js keeps its text in sync as the slider
+             moves. -->
+        <label for="budget">Budget: <output id="budget-value" for="budget">R4,000</output></label>
+        <input
+          type="range"
+          id="budget"
+          name="budget_max"
+          min="500"
+          max="15000"
+          step="100"
+          value="4000"
+        >
+      </div>
+
+      <div class="field field--checkbox">
+        <input type="checkbox" id="arm-issues" name="arm_issues">
+        <label for="arm-issues">I have arm, wrist or shoulder pain when I play</label>
+      </div>
+
+      <button type="submit" id="submit-button" class="submit-button">Find my racket</button>
+    </form>
+
+    <!-- aria-live="polite": screen readers announce whatever appears
+         in here automatically, without the user needing to navigate
+         to it - important because this content appears after a form
+         submit, somewhere the user isn't already focused. -->
+    <section id="status" class="status" aria-live="polite"></section>
+    <section id="results" class="results" aria-live="polite"></section>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      Prices, stock and specs shown here are collected from South
+      African retailers and can go out of date or be estimated rather
+      than confirmed. Always check the store's own page before buying.
+    </p>
+  </footer>
+
+  <!-- defer: downloads the script while the rest of the page keeps
+       parsing, then runs it once the DOM is ready - script.js can
+       safely assume every element above already exists. -->
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+</body>
+</html>

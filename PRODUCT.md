@@ -69,6 +69,18 @@ Specs marked `inferred` in `spec_source` come from model-line rules, not
 the store listing. Good enough to recommend on. Not good enough to
 publish as a spec sheet.
 
+**`spec_source` understates this.** The rows it marks as store data for
+`shape` were not read off a spec sheet either - they came from an
+earlier, cruder pass that keyword-matched "round" / "teardrop" /
+"diamond" inside the product description text. That method is wrong
+often enough to matter: it's why Head Gravity Pro is labelled round in
+this catalogue when Head sells it as a teardrop. So in practice,
+`shape`, `core` and `surface` are inferred throughout the catalogue,
+`spec_source` or not - there is no tier of this data confirmed by a
+manufacturer spec sheet. Treat these three fields as good enough to
+rank candidates on, never as a fact to state to a player. Price, brand,
+level and availability are real store data and don't have this problem.
+
 ## The domain logic
 
 This is the actual product. The mapping from player to racket:
